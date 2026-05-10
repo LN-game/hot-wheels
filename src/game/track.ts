@@ -134,10 +134,12 @@ class TrackBuilder {
     radius: number,
     angle: number,
     banking: number,
+    elevation = 0,
     steps = Math.max(20, Math.ceil((radius * angle) / 1.8)),
   ) {
     const side = leftFromHeading(this.authorCursor.heading).multiplyScalar(turnSign)
     const center = this.authorCursor.position.clone().addScaledVector(side, radius)
+    const startHeight = this.authorCursor.position.y
     const startAngle = Math.atan2(
       this.authorCursor.position.z - center.z,
       this.authorCursor.position.x - center.x,
@@ -151,7 +153,7 @@ class TrackBuilder {
       this.nodes.push({
         position: new THREE.Vector3(
           center.x + Math.cos(sampleAngle) * radius,
-          this.authorCursor.position.y,
+          startHeight + elevation * smoothStep(t),
           center.z + Math.sin(sampleAngle) * radius,
         ),
         banking: -turnSign * banking * Math.sin(Math.PI * t),
@@ -177,33 +179,6 @@ class TrackBuilder {
     return this
   }
 
-  arc(
-    centerX: number,
-    centerZ: number,
-    radius: number,
-    startAngle: number,
-    endAngle: number,
-    steps: number,
-    banking = 0,
-  ) {
-    const start = this.nodes.length === 0 ? 0 : 1
-
-    for (let i = start; i <= steps; i += 1) {
-      const t = i / steps
-      const angle = THREE.MathUtils.lerp(startAngle, endAngle, t)
-      this.nodes.push({
-        position: new THREE.Vector3(
-          centerX + Math.cos(angle) * radius,
-          0,
-          centerZ + Math.sin(angle) * radius,
-        ),
-        banking,
-      })
-    }
-
-    return this
-  }
-
   // TODO: Add slope(length, height), loop(radius), helix(radius, height, turns),
   // and corkscrew(length, radius, turns) path segments. Those methods should
   // only append 3D center-line nodes; the sweep geometry below already consumes
@@ -214,14 +189,14 @@ class TrackBuilder {
     }
 
     const samples: TrackSample[] = []
-    let previousTangent = tangentAt(this.nodes, 0)
-    let previousNormal = normalFromReference(previousTangent)
     let distance = 0
 
     this.nodes.forEach((node, index) => {
       const tangent = tangentAt(this.nodes, index)
-      let normal = transportNormal(tangent, previousNormal, previousTangent)
-      const binormal = tangent.clone().cross(normal).normalize()
+      const baseNormal = normalFromReference(tangent)
+      const baseBinormal = tangent.clone().cross(baseNormal).normalize()
+      const normal = baseNormal.clone()
+      const binormal = baseBinormal.clone()
 
       if (node.banking !== 0) {
         normal.applyAxisAngle(tangent, node.banking)
@@ -232,8 +207,6 @@ class TrackBuilder {
         distance += node.position.distanceTo(this.nodes[index - 1].position)
       }
 
-      previousNormal = normal.clone()
-      previousTangent = tangent.clone()
       samples.push({
         position: node.position.clone(),
         tangent,
@@ -277,28 +250,6 @@ function normalFromReference(tangent: THREE.Vector3) {
     .clone()
     .sub(tangent.clone().multiplyScalar(reference.dot(tangent)))
     .normalize()
-}
-
-function transportNormal(
-  tangent: THREE.Vector3,
-  previousNormal: THREE.Vector3,
-  previousTangent: THREE.Vector3,
-) {
-  const axis = previousTangent.clone().cross(tangent)
-  let normal = previousNormal.clone()
-
-  if (axis.lengthSq() > 0.000001) {
-    const angle = previousTangent.angleTo(tangent)
-    normal.applyAxisAngle(axis.normalize(), angle)
-  }
-
-  normal = normal.sub(tangent.clone().multiplyScalar(normal.dot(tangent)))
-
-  if (normal.lengthSq() > 0.0001) {
-    return normal.normalize()
-  }
-
-  return normalFromReference(tangent)
 }
 
 function directionFromHeading(heading: number) {
@@ -387,7 +338,7 @@ function makeArcCandidate(
   }
 
   return {
-    apply: () => builder.arc(center.x, center.z, radius, startAngle, endAngle, steps),
+    apply: () => builder.bankedArc(turnSign, radius, angle, THREE.MathUtils.degToRad(30)),
     cursor: {
       position: points[points.length - 1],
       heading: cursor.heading + turnSign * angle,
@@ -517,21 +468,21 @@ export function sampleTrackAtDistance(samples: TrackSample[], distance: number) 
 function generateTestTrackSamples() {
   const builder = new TrackBuilder()
   const sectors = [
-    { sign: 1, radius: 58, angle: 0.78, bank: 34, straight: 132, slope: 82, height: -8 },
-    { sign: -1, radius: 46, angle: 0.62, bank: 28, straight: 118, slope: 76, height: 16 },
-    { sign: -1, radius: 66, angle: 0.84, bank: 38, straight: 148, slope: 92, height: 10 },
-    { sign: 1, radius: 52, angle: 0.7, bank: 32, straight: 124, slope: 86, height: -18 },
-    { sign: 1, radius: 74, angle: 0.58, bank: 26, straight: 154, slope: 74, height: 12 },
-    { sign: -1, radius: 60, angle: 0.9, bank: 40, straight: 136, slope: 94, height: -6 },
-    { sign: 1, radius: 50, angle: 0.66, bank: 30, straight: 126, slope: 78, height: 14 },
-    { sign: -1, radius: 70, angle: 0.74, bank: 36, straight: 162, slope: 88, height: -16 },
-    { sign: -1, radius: 54, angle: 0.64, bank: 30, straight: 134, slope: 80, height: 10 },
-    { sign: 1, radius: 64, angle: 0.82, bank: 38, straight: 146, slope: 90, height: -12 },
-    { sign: -1, radius: 48, angle: 0.68, bank: 32, straight: 122, slope: 76, height: 8 },
-    { sign: 1, radius: 72, angle: 0.6, bank: 28, straight: 168, slope: 92, height: -10 },
+    { sign: 1, radius: 86, angle: 0.98, bank: 34, arcHeight: 28, straight: 128, slope: 92, height: 24 },
+    { sign: -1, radius: 72, angle: 0.86, bank: 30, arcHeight: 32, straight: 116, slope: 96, height: 26 },
+    { sign: -1, radius: 96, angle: 1.05, bank: 38, arcHeight: -24, straight: 142, slope: 104, height: 30 },
+    { sign: 1, radius: 78, angle: 0.92, bank: 34, arcHeight: 36, straight: 120, slope: 100, height: 22 },
+    { sign: 1, radius: 104, angle: 0.82, bank: 28, arcHeight: -30, straight: 148, slope: 98, height: -34 },
+    { sign: -1, radius: 90, angle: 1.12, bank: 40, arcHeight: -36, straight: 132, slope: 106, height: -30 },
+    { sign: 1, radius: 74, angle: 0.9, bank: 32, arcHeight: 26, straight: 122, slope: 94, height: -26 },
+    { sign: -1, radius: 100, angle: 0.98, bank: 36, arcHeight: -34, straight: 154, slope: 102, height: -28 },
+    { sign: -1, radius: 82, angle: 0.88, bank: 32, arcHeight: 30, straight: 130, slope: 96, height: 32 },
+    { sign: 1, radius: 94, angle: 1.06, bank: 38, arcHeight: 34, straight: 140, slope: 106, height: 28 },
+    { sign: -1, radius: 76, angle: 0.94, bank: 34, arcHeight: -28, straight: 118, slope: 92, height: 24 },
+    { sign: 1, radius: 108, angle: 0.84, bank: 30, arcHeight: -32, straight: 160, slope: 104, height: -36 },
   ]
 
-  builder.straight(112).slope(86, 20).straight(84)
+  builder.straight(112).slope(104, 34).straight(84)
 
   sectors.forEach((sector) => {
     builder
@@ -540,6 +491,7 @@ function generateTestTrackSamples() {
         sector.radius,
         Math.PI * sector.angle,
         THREE.MathUtils.degToRad(sector.bank),
+        sector.arcHeight,
       )
       .straight(sector.straight)
       .slope(sector.slope, sector.height)
