@@ -529,10 +529,15 @@ function generateTestTrackSamples() {
     { sign: -1, radius: 76, angle: 0.94, bank: 34, arcHeight: -28, straight: 118, slope: 92, height: 24 },
     { sign: 1, radius: 108, angle: 0.84, bank: 30, arcHeight: -32, straight: 160, slope: 104, height: -36 },
   ]
+  const loopSectors = new Map([
+    [2, { radius: 48, lateralOffset: -72, exitStraight: 88 }],
+    [5, { radius: 52, lateralOffset: 78, exitStraight: 96 }],
+    [8, { radius: 44, lateralOffset: -68, exitStraight: 84 }],
+  ])
 
   builder.straight(112).slope(104, 34).straight(84).verticalLoop(56, 84).straight(92)
 
-  sectors.forEach((sector) => {
+  sectors.forEach((sector, index) => {
     builder
       .bankedArc(
         sector.sign,
@@ -544,6 +549,12 @@ function generateTestTrackSamples() {
       .straight(sector.straight)
       .slope(sector.slope, sector.height)
       .straight(72)
+
+    const loop = loopSectors.get(index)
+
+    if (loop) {
+      builder.verticalLoop(loop.radius, loop.lateralOffset).straight(loop.exitStraight)
+    }
   })
 
   return builder.straight(180).buildSamples()

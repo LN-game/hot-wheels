@@ -21,7 +21,7 @@ export function Scene({ onSpeedChange }: SceneProps) {
   return (
     <>
       <color attach="background" args={['#0b8ed0']} />
-      <fog attach="fog" args={['#0b8ed0', 140, 560]} />
+      <fog attach="fog" args={['#0b8ed0', 1200, 4200]} />
       <ambientLight intensity={0.65} />
       <directionalLight
         castShadow
@@ -64,7 +64,7 @@ export function Scene({ onSpeedChange }: SceneProps) {
         onSpeedChange={onSpeedChange}
       />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.18, -220]} receiveShadow>
-        <planeGeometry args={[2400, 2600]} />
+        <planeGeometry args={[8000, 8000]} />
         <meshStandardMaterial color="#40b7da" roughness={0.85} />
       </mesh>
     </>

@@ -10,7 +10,7 @@ function App() {
     <main className="game">
       <Canvas
         shadows
-        camera={{ fov: 58, position: [0, 7, 68], near: 0.1, far: 300 }}
+        camera={{ fov: 58, position: [0, 7, 68], near: 0.1, far: 5000 }}
         gl={{ antialias: true }}
       >
         <Scene onSpeedChange={setSpeed} />

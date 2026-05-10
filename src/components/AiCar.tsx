@@ -159,7 +159,7 @@ function pickOvertakeLane(playerLane: number, currentLane: number, seed: number)
 export function AiCar({
   color,
   startDistance,
-  startDelay = 3,
+  startDelay = 1,
   laneOffset,
   playerStateRef,
   skill,
