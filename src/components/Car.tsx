@@ -1,14 +1,13 @@
 import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { resolveRailCollision } from '../game/collision'
-import { CAR_HEIGHT, CAR_WIDTH } from '../game/constants'
-import type { TrackData } from '../game/track'
+import { CAR_HEIGHT, CAR_WIDTH, ROAD_WIDTH } from '../game/constants'
+import { sampleTrackAtDistance, type TrackData } from '../game/track'
 import { useKeyboard } from '../hooks/useKeyboard'
 
 type CarState = {
-  heading: number
-  position: THREE.Vector3
+  distance: number
+  lateralOffset: number
   speed: number
 }
 
@@ -23,20 +22,20 @@ const STEER_SPEED_RATE = 0.014
 const ACCELERATION = 17
 const DRIVE_DRAG = 0.28
 const COAST_DRAG = 1.45
-
-function forwardFromHeading(heading: number) {
-  return new THREE.Vector3(-Math.sin(heading), 0, -Math.cos(heading))
-}
+const TRACK_SURFACE_OFFSET = 0.08
+const CAR_CENTER_HEIGHT = CAR_HEIGHT / 2 + TRACK_SURFACE_OFFSET
+const LATERAL_LIMIT = ROAD_WIDTH / 2 - CAR_WIDTH / 2 - 0.08
 
 export function Car({ track, onSpeedChange }: CarProps) {
   const carRef = useRef<THREE.Group>(null)
   const keys = useKeyboard()
   const car = useRef<CarState>({
-    heading: 0,
-    position: new THREE.Vector3(0, CAR_HEIGHT / 2 + 0.08, 54),
+    distance: 8,
+    lateralOffset: 0,
     speed: 0,
   })
   const cameraTarget = useRef(new THREE.Vector3())
+  const orientation = useRef(new THREE.Quaternion())
 
   useFrame((state, delta) => {
     const step = Math.min(delta, 0.033)
@@ -51,37 +50,50 @@ export function Car({ track, onSpeedChange }: CarProps) {
 
     if (Math.abs(current.speed) > 0.25) {
       const reverse = current.speed < 0 ? -1 : 1
-      current.heading +=
+      current.lateralOffset -=
         steerInput *
         reverse *
         (STEER_BASE_RATE + Math.abs(current.speed) * STEER_SPEED_RATE) *
+        Math.max(2.5, Math.abs(current.speed) * 0.42) *
         step
     }
 
-    const maxMoveDistance = Math.abs(current.speed * MOVE_SPEED_MULTIPLIER) * step
-    const substeps = Math.max(1, Math.ceil(maxMoveDistance / 2.2))
-    for (let index = 0; index < substeps; index += 1) {
-      const substep = step / substeps
-      const forward = forwardFromHeading(current.heading)
-      current.position.addScaledVector(
-        forward,
-        current.speed * MOVE_SPEED_MULTIPLIER * substep,
-      )
-      resolveRailCollision(current, track.samples)
+    current.lateralOffset = THREE.MathUtils.clamp(
+      current.lateralOffset,
+      -LATERAL_LIMIT,
+      LATERAL_LIMIT,
+    )
+    current.distance += current.speed * MOVE_SPEED_MULTIPLIER * step
+
+    if (current.distance <= 0 || current.distance >= track.totalLength) {
+      current.distance = THREE.MathUtils.clamp(current.distance, 0, track.totalLength)
+      current.speed = 0
     }
+
+    const frame = sampleTrackAtDistance(track.samples, current.distance)
+    const carPosition = frame.position
+      .clone()
+      .addScaledVector(frame.binormal, current.lateralOffset)
+      .addScaledVector(frame.normal, CAR_CENTER_HEIGHT)
+    const zAxis = frame.tangent.clone().multiplyScalar(-1)
+    const rotationMatrix = new THREE.Matrix4().makeBasis(
+      frame.binormal,
+      frame.normal,
+      zAxis,
+    )
+    orientation.current.setFromRotationMatrix(rotationMatrix)
 
     if (carRef.current) {
-      carRef.current.position.copy(current.position)
-      carRef.current.rotation.y = current.heading
+      carRef.current.position.copy(carPosition)
+      carRef.current.quaternion.copy(orientation.current)
     }
 
-    const forward = forwardFromHeading(current.heading)
-    const desiredCamera = current.position
+    const desiredCamera = carPosition
       .clone()
-      .addScaledVector(forward, -12)
-      .add(new THREE.Vector3(0, 6.5, 0))
+      .addScaledVector(frame.tangent, -13)
+      .addScaledVector(frame.normal, 6.5)
     cameraTarget.current.lerp(
-      current.position.clone().add(new THREE.Vector3(0, 1.3, 0)),
+      carPosition.clone().addScaledVector(frame.normal, 1.4),
       1 - Math.exp(-7 * step),
     )
 

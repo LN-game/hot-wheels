@@ -3,6 +3,7 @@ import { ROAD_WIDTH, WORLD_UP } from './constants'
 
 export type TrackData = {
   samples: TrackSample[]
+  totalLength: number
   road: THREE.BufferGeometry
   leftRail: THREE.BufferGeometry
   rightRail: THREE.BufferGeometry
@@ -15,7 +16,10 @@ export type TrackSample = {
   normal: THREE.Vector3
   binormal: THREE.Vector3
   banking: number
+  distance: number
 }
+
+export type TrackFrame = TrackSample
 
 type TrackGenConfig = {
   seed: number
@@ -40,6 +44,11 @@ type PathNode = {
 }
 
 type TrackCursor = {
+  position: THREE.Vector3
+  heading: number
+}
+
+type AuthorCursor = {
   position: THREE.Vector3
   heading: number
 }
@@ -76,6 +85,83 @@ class SeededRandom {
 
 class TrackBuilder {
   private nodes: PathNode[] = []
+  private authorCursor: AuthorCursor = {
+    position: new THREE.Vector3(0, 0, 62),
+    heading: 0,
+  }
+
+  straight(length: number, steps = Math.max(10, Math.ceil(length / 3))) {
+    const end = this.authorCursor.position
+      .clone()
+      .addScaledVector(directionFromHeading(this.authorCursor.heading), length)
+
+    this.lineTo(end, steps)
+    this.authorCursor.position = end
+    return this
+  }
+
+  slope(
+    length: number,
+    height: number,
+    steps = Math.max(16, Math.ceil(length / 2.6)),
+  ) {
+    const from = this.lastPosition()
+    const direction = directionFromHeading(this.authorCursor.heading)
+    const start = this.nodes.length === 0 ? 0 : 1
+
+    for (let i = start; i <= steps; i += 1) {
+      const t = i / steps
+      const eased = smoothStep(t)
+      this.nodes.push({
+        position: from
+          .clone()
+          .addScaledVector(direction, length * t)
+          .add(new THREE.Vector3(0, height * eased, 0)),
+        banking: 0,
+      })
+    }
+
+    this.authorCursor.position = from
+      .clone()
+      .addScaledVector(direction, length)
+      .add(new THREE.Vector3(0, height, 0))
+
+    return this
+  }
+
+  bankedArc(
+    turnSign: number,
+    radius: number,
+    angle: number,
+    banking: number,
+    steps = Math.max(20, Math.ceil((radius * angle) / 1.8)),
+  ) {
+    const side = leftFromHeading(this.authorCursor.heading).multiplyScalar(turnSign)
+    const center = this.authorCursor.position.clone().addScaledVector(side, radius)
+    const startAngle = Math.atan2(
+      this.authorCursor.position.z - center.z,
+      this.authorCursor.position.x - center.x,
+    )
+    const endAngle = startAngle - turnSign * angle
+    const start = this.nodes.length === 0 ? 0 : 1
+
+    for (let i = start; i <= steps; i += 1) {
+      const t = i / steps
+      const sampleAngle = THREE.MathUtils.lerp(startAngle, endAngle, t)
+      this.nodes.push({
+        position: new THREE.Vector3(
+          center.x + Math.cos(sampleAngle) * radius,
+          this.authorCursor.position.y,
+          center.z + Math.sin(sampleAngle) * radius,
+        ),
+        banking: -turnSign * banking * Math.sin(Math.PI * t),
+      })
+    }
+
+    this.authorCursor.position = this.nodes[this.nodes.length - 1].position.clone()
+    this.authorCursor.heading += turnSign * angle
+    return this
+  }
 
   lineTo(to: THREE.Vector3, steps: number, banking = 0) {
     const from = this.lastPosition()
@@ -128,11 +214,13 @@ class TrackBuilder {
     }
 
     const samples: TrackSample[] = []
-    let previousNormal = WORLD_UP.clone()
+    let previousTangent = tangentAt(this.nodes, 0)
+    let previousNormal = normalFromReference(previousTangent)
+    let distance = 0
 
     this.nodes.forEach((node, index) => {
       const tangent = tangentAt(this.nodes, index)
-      const normal = transportNormal(tangent, previousNormal)
+      let normal = transportNormal(tangent, previousNormal, previousTangent)
       const binormal = tangent.clone().cross(normal).normalize()
 
       if (node.banking !== 0) {
@@ -140,13 +228,19 @@ class TrackBuilder {
         binormal.applyAxisAngle(tangent, node.banking)
       }
 
+      if (index > 0) {
+        distance += node.position.distanceTo(this.nodes[index - 1].position)
+      }
+
       previousNormal = normal.clone()
+      previousTangent = tangent.clone()
       samples.push({
         position: node.position.clone(),
         tangent,
         normal,
         binormal,
         banking: node.banking,
+        distance,
       })
     })
 
@@ -170,18 +264,41 @@ function tangentAt(nodes: PathNode[], index: number) {
   return next.clone().sub(previous).normalize()
 }
 
-function transportNormal(tangent: THREE.Vector3, previousNormal: THREE.Vector3) {
-  const normal = previousNormal
+function smoothStep(t: number) {
+  return t * t * (3 - 2 * t)
+}
+
+function normalFromReference(tangent: THREE.Vector3) {
+  const reference =
+    Math.abs(tangent.dot(WORLD_UP)) < 0.92
+      ? WORLD_UP
+      : new THREE.Vector3(1, 0, 0)
+  return reference
     .clone()
-    .sub(tangent.clone().multiplyScalar(previousNormal.dot(tangent)))
+    .sub(tangent.clone().multiplyScalar(reference.dot(tangent)))
+    .normalize()
+}
+
+function transportNormal(
+  tangent: THREE.Vector3,
+  previousNormal: THREE.Vector3,
+  previousTangent: THREE.Vector3,
+) {
+  const axis = previousTangent.clone().cross(tangent)
+  let normal = previousNormal.clone()
+
+  if (axis.lengthSq() > 0.000001) {
+    const angle = previousTangent.angleTo(tangent)
+    normal.applyAxisAngle(axis.normalize(), angle)
+  }
+
+  normal = normal.sub(tangent.clone().multiplyScalar(normal.dot(tangent)))
 
   if (normal.lengthSq() > 0.0001) {
     return normal.normalize()
   }
 
-  // TODO: For vertical loops and corkscrews, seed the initial frame from the
-  // previous path segment or an author-provided up vector to avoid frame flips.
-  return WORLD_UP.clone()
+  return normalFromReference(tangent)
 }
 
 function directionFromHeading(heading: number) {
@@ -344,6 +461,94 @@ function generateRandomTrackSamples(config: TrackGenConfig) {
   return builder.buildSamples()
 }
 
+function frameBetweenSamples(
+  start: TrackSample,
+  end: TrackSample,
+  t: number,
+): TrackFrame {
+  const position = start.position.clone().lerp(end.position, t)
+  const tangent = start.tangent.clone().lerp(end.tangent, t).normalize()
+  let normal = start.normal.clone().lerp(end.normal, t)
+
+  normal.sub(tangent.clone().multiplyScalar(normal.dot(tangent)))
+  if (normal.lengthSq() <= 0.0001) {
+    normal = normalFromReference(tangent)
+  } else {
+    normal.normalize()
+  }
+
+  const binormal = tangent.clone().cross(normal).normalize()
+
+  return {
+    position,
+    tangent,
+    normal,
+    binormal,
+    banking: THREE.MathUtils.lerp(start.banking, end.banking, t),
+    distance: THREE.MathUtils.lerp(start.distance, end.distance, t),
+  }
+}
+
+export function sampleTrackAtDistance(samples: TrackSample[], distance: number) {
+  if (samples.length === 0) {
+    throw new Error('Cannot sample an empty track')
+  }
+
+  const clampedDistance = THREE.MathUtils.clamp(
+    distance,
+    0,
+    samples[samples.length - 1].distance,
+  )
+
+  for (let index = 0; index < samples.length - 1; index += 1) {
+    const start = samples[index]
+    const end = samples[index + 1]
+
+    if (clampedDistance <= end.distance) {
+      const length = end.distance - start.distance
+      const t = length > 0.0001 ? (clampedDistance - start.distance) / length : 0
+      return frameBetweenSamples(start, end, t)
+    }
+  }
+
+  return samples[samples.length - 1]
+}
+
+function generateTestTrackSamples() {
+  const builder = new TrackBuilder()
+  const sectors = [
+    { sign: 1, radius: 58, angle: 0.78, bank: 34, straight: 132, slope: 82, height: -8 },
+    { sign: -1, radius: 46, angle: 0.62, bank: 28, straight: 118, slope: 76, height: 16 },
+    { sign: -1, radius: 66, angle: 0.84, bank: 38, straight: 148, slope: 92, height: 10 },
+    { sign: 1, radius: 52, angle: 0.7, bank: 32, straight: 124, slope: 86, height: -18 },
+    { sign: 1, radius: 74, angle: 0.58, bank: 26, straight: 154, slope: 74, height: 12 },
+    { sign: -1, radius: 60, angle: 0.9, bank: 40, straight: 136, slope: 94, height: -6 },
+    { sign: 1, radius: 50, angle: 0.66, bank: 30, straight: 126, slope: 78, height: 14 },
+    { sign: -1, radius: 70, angle: 0.74, bank: 36, straight: 162, slope: 88, height: -16 },
+    { sign: -1, radius: 54, angle: 0.64, bank: 30, straight: 134, slope: 80, height: 10 },
+    { sign: 1, radius: 64, angle: 0.82, bank: 38, straight: 146, slope: 90, height: -12 },
+    { sign: -1, radius: 48, angle: 0.68, bank: 32, straight: 122, slope: 76, height: 8 },
+    { sign: 1, radius: 72, angle: 0.6, bank: 28, straight: 168, slope: 92, height: -10 },
+  ]
+
+  builder.straight(112).slope(86, 20).straight(84)
+
+  sectors.forEach((sector) => {
+    builder
+      .bankedArc(
+        sector.sign,
+        sector.radius,
+        Math.PI * sector.angle,
+        THREE.MathUtils.degToRad(sector.bank),
+      )
+      .straight(sector.straight)
+      .slope(sector.slope, sector.height)
+      .straight(72)
+  })
+
+  return builder.straight(180).buildSamples()
+}
+
 function makeRibbonGeometry(
   samples: TrackSample[],
   width: number,
@@ -463,25 +668,29 @@ function makeRailGeometry(
 }
 
 export function buildTrack(): TrackData {
-  const samples = generateRandomTrackSamples({
-    seed: 20260510,
-    segmentCount: 7,
-    minStraight: 28,
-    maxStraight: 62,
-    minRadius: 24,
-    maxRadius: 42,
-    minTurnAngle: Math.PI / 5,
-    maxTurnAngle: Math.PI / 2,
-    bounds: {
-      minX: -92,
-      maxX: 128,
-      minZ: -112,
-      maxZ: 78,
-    },
-  })
+  const useFixedTestTrack = true
+  const samples = useFixedTestTrack
+    ? generateTestTrackSamples()
+    : generateRandomTrackSamples({
+        seed: 20260510,
+        segmentCount: 7,
+        minStraight: 28,
+        maxStraight: 62,
+        minRadius: 24,
+        maxRadius: 42,
+        minTurnAngle: Math.PI / 5,
+        maxTurnAngle: Math.PI / 2,
+        bounds: {
+          minX: -92,
+          maxX: 128,
+          minZ: -112,
+          maxZ: 78,
+        },
+      })
 
   return {
     samples,
+    totalLength: samples[samples.length - 1].distance,
     road: makeRibbonGeometry(samples, ROAD_WIDTH),
     leftRail: makeRailGeometry(samples, ROAD_WIDTH / 2, 1.25, 0.7),
     rightRail: makeRailGeometry(samples, -ROAD_WIDTH / 2, 1.25, 0.7),
