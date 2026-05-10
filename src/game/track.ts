@@ -382,24 +382,35 @@ function makeRibbonGeometry(
 
 function makeRailGeometry(
   samples: TrackSample[],
-  offset: number,
+  edgeOffset: number,
   height: number,
   thickness: number,
 ) {
-  const inner: THREE.Vector3[] = []
+  const innerEdge: THREE.Vector3[] = []
   const outer: THREE.Vector3[] = []
+  const side = Math.sign(edgeOffset) || 1
+  const roadOverlap = 0.18
 
   samples.forEach((sample) => {
-    const center = sample.position.clone().addScaledVector(sample.binormal, offset)
-    inner.push(center.clone().addScaledVector(sample.binormal, -thickness / 2))
-    outer.push(center.clone().addScaledVector(sample.binormal, thickness / 2))
+    innerEdge.push(
+      sample.position.clone().addScaledVector(
+        sample.binormal,
+        edgeOffset - side * roadOverlap,
+      ),
+    )
+    outer.push(
+      sample.position.clone().addScaledVector(
+        sample.binormal,
+        edgeOffset + side * thickness,
+      ),
+    )
   })
 
   const vertices: number[] = []
   const indices: number[] = []
 
   samples.forEach((sample, index) => {
-    const a = inner[index]
+    const a = innerEdge[index]
     const b = outer[index]
     const topA = a.clone().addScaledVector(sample.normal, height)
     const topB = b.clone().addScaledVector(sample.normal, height)
@@ -472,8 +483,8 @@ export function buildTrack(): TrackData {
   return {
     samples,
     road: makeRibbonGeometry(samples, ROAD_WIDTH),
-    leftRail: makeRailGeometry(samples, ROAD_WIDTH / 2 + 0.35, 1.25, 0.7),
-    rightRail: makeRailGeometry(samples, -ROAD_WIDTH / 2 - 0.35, 1.25, 0.7),
+    leftRail: makeRailGeometry(samples, ROAD_WIDTH / 2, 1.25, 0.7),
+    rightRail: makeRailGeometry(samples, -ROAD_WIDTH / 2, 1.25, 0.7),
     centerStripe: makeRibbonGeometry(samples, 0.22, 0.045),
   }
 }

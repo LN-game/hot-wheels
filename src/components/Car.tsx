@@ -17,6 +17,13 @@ type CarProps = {
   onSpeedChange: (speed: number) => void
 }
 
+const MOVE_SPEED_MULTIPLIER = 4
+const STEER_BASE_RATE = 0.55
+const STEER_SPEED_RATE = 0.014
+const ACCELERATION = 17
+const DRIVE_DRAG = 0.28
+const COAST_DRAG = 1.45
+
 function forwardFromHeading(heading: number) {
   return new THREE.Vector3(-Math.sin(heading), 0, -Math.cos(heading))
 }
@@ -38,20 +45,28 @@ export function Car({ track, onSpeedChange }: CarProps) {
     const steerInput = Number(Boolean(pressed.a)) - Number(Boolean(pressed.d))
     const current = car.current
 
-    current.speed += forwardInput * 34 * step
-    current.speed *= 1 - 1.45 * step
+    current.speed += forwardInput * ACCELERATION * step
+    current.speed *= 1 - (forwardInput === 0 ? COAST_DRAG : DRIVE_DRAG) * step
     current.speed = THREE.MathUtils.clamp(current.speed, -13, 42)
 
     if (Math.abs(current.speed) > 0.25) {
       const reverse = current.speed < 0 ? -1 : 1
-      current.heading += steerInput * reverse * (1.45 + Math.abs(current.speed) * 0.035) * step
+      current.heading +=
+        steerInput *
+        reverse *
+        (STEER_BASE_RATE + Math.abs(current.speed) * STEER_SPEED_RATE) *
+        step
     }
 
-    const substeps = Math.max(1, Math.ceil((Math.abs(current.speed) * step) / 2.2))
+    const maxMoveDistance = Math.abs(current.speed * MOVE_SPEED_MULTIPLIER) * step
+    const substeps = Math.max(1, Math.ceil(maxMoveDistance / 2.2))
     for (let index = 0; index < substeps; index += 1) {
       const substep = step / substeps
       const forward = forwardFromHeading(current.heading)
-      current.position.addScaledVector(forward, current.speed * substep)
+      current.position.addScaledVector(
+        forward,
+        current.speed * MOVE_SPEED_MULTIPLIER * substep,
+      )
       resolveRailCollision(current, track.samples)
     }
 
