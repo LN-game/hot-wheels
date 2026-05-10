@@ -40,6 +40,7 @@ type TrackGenConfig = {
 
 type PathNode = {
   position: THREE.Vector3
+  normal?: THREE.Vector3
   banking: number
 }
 
@@ -165,6 +166,41 @@ class TrackBuilder {
     return this
   }
 
+  verticalLoop(
+    radius: number,
+    lateralOffset = radius * 1.25,
+    steps = Math.max(48, Math.ceil((Math.PI * 2 * radius) / 1.35)),
+  ) {
+    const startPosition = this.lastPosition().clone()
+    const forward = directionFromHeading(this.authorCursor.heading)
+    const side = leftFromHeading(this.authorCursor.heading)
+    const start = this.nodes.length === 0 ? 0 : 1
+
+    for (let i = start; i <= steps; i += 1) {
+      const t = i / steps
+      const angle = Math.PI * 2 * t
+      const sideShift = smoothStep(t) * lateralOffset
+      const center = startPosition
+        .clone()
+        .addScaledVector(side, sideShift)
+        .addScaledVector(WORLD_UP, radius)
+      const position = startPosition
+        .clone()
+        .addScaledVector(forward, Math.sin(angle) * radius)
+        .addScaledVector(side, sideShift)
+        .addScaledVector(WORLD_UP, (1 - Math.cos(angle)) * radius)
+
+      this.nodes.push({
+        position,
+        normal: center.clone().sub(position).normalize(),
+        banking: 0,
+      })
+    }
+
+    this.authorCursor.position = startPosition.addScaledVector(side, lateralOffset)
+    return this
+  }
+
   lineTo(to: THREE.Vector3, steps: number, banking = 0) {
     const from = this.lastPosition()
     const start = this.nodes.length === 0 ? 0 : 1
@@ -179,10 +215,6 @@ class TrackBuilder {
     return this
   }
 
-  // TODO: Add slope(length, height), loop(radius), helix(radius, height, turns),
-  // and corkscrew(length, radius, turns) path segments. Those methods should
-  // only append 3D center-line nodes; the sweep geometry below already consumes
-  // arbitrary 3D samples.
   buildSamples() {
     if (this.nodes.length < 2) {
       throw new Error('TrackBuilder needs at least two nodes')
@@ -193,7 +225,7 @@ class TrackBuilder {
 
     this.nodes.forEach((node, index) => {
       const tangent = tangentAt(this.nodes, index)
-      const baseNormal = normalFromReference(tangent)
+      const baseNormal = normalForNode(node, tangent)
       const baseBinormal = tangent.clone().cross(baseNormal).normalize()
       const normal = baseNormal.clone()
       const binormal = baseBinormal.clone()
@@ -250,6 +282,22 @@ function normalFromReference(tangent: THREE.Vector3) {
     .clone()
     .sub(tangent.clone().multiplyScalar(reference.dot(tangent)))
     .normalize()
+}
+
+function normalForNode(node: PathNode, tangent: THREE.Vector3) {
+  if (!node.normal) {
+    return normalFromReference(tangent)
+  }
+
+  const normal = node.normal
+    .clone()
+    .sub(tangent.clone().multiplyScalar(node.normal.dot(tangent)))
+
+  if (normal.lengthSq() <= 0.0001) {
+    return normalFromReference(tangent)
+  }
+
+  return normal.normalize()
 }
 
 function directionFromHeading(heading: number) {
@@ -482,7 +530,7 @@ function generateTestTrackSamples() {
     { sign: 1, radius: 108, angle: 0.84, bank: 30, arcHeight: -32, straight: 160, slope: 104, height: -36 },
   ]
 
-  builder.straight(112).slope(104, 34).straight(84)
+  builder.straight(112).slope(104, 34).straight(84).verticalLoop(56, 84).straight(92)
 
   sectors.forEach((sector) => {
     builder
