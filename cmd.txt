@@ -1,0 +1,4 @@
+bun create vite . --template react-ts
+bun add three @react-three/fiber @react-three/drei
+bun add @react-three/rapier zustand leva @react-three/postprocessing maath lucide-react
+bun add -D @types/three
