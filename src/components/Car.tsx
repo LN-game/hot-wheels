@@ -1,7 +1,6 @@
 import { useRef, type RefObject } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { CAR_HEIGHT, CAR_WIDTH } from '../game/constants'
 import {
   getCarPose,
   MAX_FORWARD_SPEED,
@@ -10,6 +9,7 @@ import {
 } from '../game/carMotion'
 import type { TrackData } from '../game/track'
 import { useKeyboard } from '../hooks/useKeyboard'
+import { LowPolyCar } from './LowPolyCar'
 
 type CarProps = {
   playerStateRef?: RefObject<CarState>
@@ -91,14 +91,7 @@ export function Car({ playerStateRef, track, onSpeedChange }: CarProps) {
 
   return (
     <group ref={carRef}>
-      <mesh castShadow>
-        <boxGeometry args={[CAR_WIDTH, CAR_HEIGHT, 4]} />
-        <meshStandardMaterial color="#0d6bff" roughness={0.36} metalness={0.12} />
-      </mesh>
-      <mesh position={[0, 0.52, -1.45]} castShadow>
-        <boxGeometry args={[1.25, 0.16, 0.55]} />
-        <meshStandardMaterial color="#8fd2ff" roughness={0.25} />
-      </mesh>
+      <LowPolyCar color="#0d6bff" />
     </group>
   )
 }

@@ -1,7 +1,6 @@
 import { useRef, type RefObject } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { CAR_HEIGHT, CAR_WIDTH } from '../game/constants'
 import {
   getCarPose,
   LATERAL_LIMIT,
@@ -10,6 +9,7 @@ import {
   updateCarMotion,
 } from '../game/carMotion'
 import { sampleTrackAtDistance, type TrackData } from '../game/track'
+import { LowPolyCar } from './LowPolyCar'
 
 type AiCarProps = {
   color: string
@@ -233,14 +233,7 @@ export function AiCar({
 
   return (
     <group ref={carRef}>
-      <mesh castShadow>
-        <boxGeometry args={[CAR_WIDTH, CAR_HEIGHT, 4]} />
-        <meshStandardMaterial color={color} roughness={0.38} metalness={0.1} />
-      </mesh>
-      <mesh position={[0, 0.52, -1.45]} castShadow>
-        <boxGeometry args={[1.25, 0.16, 0.55]} />
-        <meshStandardMaterial color="#f7fbff" roughness={0.25} />
-      </mesh>
+      <LowPolyCar color={color} glassColor="#f7fbff" />
     </group>
   )
 }

@@ -18,6 +18,7 @@ function App() {
       <div className="hud" aria-live="polite">
         <span>{speed}</span>
         <small>KM/H</small>
+        <p>使用wasd控制</p>
       </div>
     </main>
   )
