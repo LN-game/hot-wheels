@@ -1,56 +1,56 @@
-# Hot Wheels Prototype
+# Hot Wheels 原型
 
-A small Hot Wheels-style racing prototype built with Bun, Vite, React, and Three.js.
+这是一个使用 Bun、Vite、React 和 Three.js 构建的小型 Hot Wheels 风格赛车原型。
 
 游戏效果图：`target.png`
 
-## Current Step
+## 当前进度
 
-Step 1 is implemented:
+第 1 步已经实现：
 
-- Blue box placeholder car
-- WASD driving controls
-- Follow camera aligned with the car's front/back axis
-- Seeded procedural orange plastic track
-- Constrained random straight and curved track sections
-- 3D-ready track sweep pipeline using tangent, normal, and binormal frames
-- Speed HUD
+- 蓝色盒子占位车辆
+- WASD 驾驶控制
+- 与车辆前后轴对齐的跟随镜头
+- 基于固定种子的程序化橙色塑料赛道
+- 带约束的随机直道和弯道赛段
+- 使用切线、法线和副法线局部坐标帧的 3D 赛道扫掠流程
+- 速度 HUD
 
-## Track Generation
+## 赛道生成
 
-The track is generated in code, not loaded from an external model.
+赛道由代码生成，不依赖外部模型文件。
 
-Current implementation:
+当前实现：
 
-- `TrackBuilder` stores sampled center-line nodes.
-- `generateRandomTrackSamples()` builds a deterministic random layout from a fixed seed.
-- The generator currently uses only straight sections and horizontal arcs.
-- Candidate sections are constrained by bounds, turn radius, turn angle, straight length, and minimum distance from previous track samples.
-- Road surface, center stripe, and rails are swept from the generated center line using local 3D frames.
+- `TrackBuilder` 保存采样后的中心线路径节点。
+- `generateRandomTrackSamples()` 使用固定种子生成确定性的随机布局。
+- 生成器目前只使用直线段和水平圆弧。
+- 候选赛段会受到边界、转弯半径、转弯角度、直道长度以及与既有采样点最小距离的约束。
+- 路面、中心线和护栏会基于生成的中心线，使用局部 3D 坐标帧扫掠生成。
 
-Future TODO:
+后续 TODO：
 
-- Add slope segments.
-- Add banked turns.
-- Add vertical loops.
-- Add helices.
-- Add corkscrews.
-- Improve frame seeding for vertical structures to avoid normal/binormal flips.
+- 增加坡道段。
+- 增加带倾角的弯道。
+- 增加垂直回环。
+- 增加螺旋赛段。
+- 增加桶滚赛段。
+- 改进垂直结构的坐标帧初始化，避免法线和副法线翻转。
 
-## Controls
+## 操作
 
-- `W`: accelerate
-- `S`: reverse / brake
-- `A`: steer left
-- `D`: steer right
+- `W`：加速
+- `S`：倒车 / 刹车
+- `A`：左转
+- `D`：右转
 
-## Validation
+## 验证
 
-The current prototype passes:
+当前原型通过：
 
 ```bash
 bun run lint
 bun run build
 ```
 
-然后等待用户手动测试。
+之后等待用户手动测试。
