@@ -240,7 +240,7 @@ function Car({ onSpeedChange }: { onSpeedChange: (speed: number) => void }) {
     const step = Math.min(delta, 0.033)
     const pressed = keys.current
     const forwardInput = Number(Boolean(pressed.w)) - Number(Boolean(pressed.s))
-    const steerInput = Number(Boolean(pressed.d)) - Number(Boolean(pressed.a))
+    const steerInput = Number(Boolean(pressed.a)) - Number(Boolean(pressed.d))
     const current = car.current
 
     current.speed += forwardInput * 34 * step
@@ -253,7 +253,7 @@ function Car({ onSpeedChange }: { onSpeedChange: (speed: number) => void }) {
     }
 
     const forward = new THREE.Vector3(
-      Math.sin(current.heading),
+      -Math.sin(current.heading),
       0,
       -Math.cos(current.heading),
     )

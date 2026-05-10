@@ -1,6 +1,7 @@
 # Hot Wheels Prototype
 
 A small Hot Wheels-style racing prototype built with Bun, Vite, React, and Three.js.
+游戏效果图：target.png
 
 ## Current Step
 
