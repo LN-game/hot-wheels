@@ -1,9 +1,10 @@
-import { useMemo } from 'react'
-import { buildTrack } from '../game/track'
+import type { TrackData } from '../game/track'
 
-export function Track() {
-  const track = useMemo(() => buildTrack(), [])
+type TrackProps = {
+  track: TrackData
+}
 
+export function Track({ track }: TrackProps) {
   return (
     <group>
       <mesh geometry={track.road} receiveShadow>
