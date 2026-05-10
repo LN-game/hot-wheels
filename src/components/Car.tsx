@@ -7,6 +7,7 @@ import { useKeyboard } from '../hooks/useKeyboard'
 
 type CarState = {
   distance: number
+  headingOffset: number
   lateralOffset: number
   speed: number
 }
@@ -19,6 +20,7 @@ type CarProps = {
 const MOVE_SPEED_MULTIPLIER = 4
 const STEER_BASE_RATE = 0.55
 const STEER_SPEED_RATE = 0.014
+const MAX_HEADING_OFFSET = Math.PI / 5
 const ACCELERATION = 17
 const DRIVE_DRAG = 0.28
 const COAST_DRAG = 1.45
@@ -31,6 +33,7 @@ export function Car({ track, onSpeedChange }: CarProps) {
   const keys = useKeyboard()
   const car = useRef<CarState>({
     distance: 8,
+    headingOffset: 0,
     lateralOffset: 0,
     speed: 0,
   })
@@ -50,20 +53,31 @@ export function Car({ track, onSpeedChange }: CarProps) {
 
     if (Math.abs(current.speed) > 0.25) {
       const reverse = current.speed < 0 ? -1 : 1
-      current.lateralOffset -=
+      current.headingOffset -=
         steerInput *
         reverse *
         (STEER_BASE_RATE + Math.abs(current.speed) * STEER_SPEED_RATE) *
-        Math.max(2.5, Math.abs(current.speed) * 0.42) *
         step
     }
 
+    current.headingOffset = THREE.MathUtils.clamp(
+      current.headingOffset,
+      -MAX_HEADING_OFFSET,
+      MAX_HEADING_OFFSET,
+    )
+
+    const forwardAmount = Math.cos(current.headingOffset)
+    const lateralAmount = Math.sin(current.headingOffset)
+
+    current.distance +=
+      current.speed * forwardAmount * MOVE_SPEED_MULTIPLIER * step
+    current.lateralOffset +=
+      current.speed * lateralAmount * MOVE_SPEED_MULTIPLIER * step
     current.lateralOffset = THREE.MathUtils.clamp(
       current.lateralOffset,
       -LATERAL_LIMIT,
       LATERAL_LIMIT,
     )
-    current.distance += current.speed * MOVE_SPEED_MULTIPLIER * step
 
     if (current.distance <= 0 || current.distance >= track.totalLength) {
       current.distance = THREE.MathUtils.clamp(current.distance, 0, track.totalLength)
@@ -75,9 +89,15 @@ export function Car({ track, onSpeedChange }: CarProps) {
       .clone()
       .addScaledVector(frame.binormal, current.lateralOffset)
       .addScaledVector(frame.normal, CAR_CENTER_HEIGHT)
-    const zAxis = frame.tangent.clone().multiplyScalar(-1)
+    const forward = frame.tangent
+      .clone()
+      .multiplyScalar(forwardAmount)
+      .addScaledVector(frame.binormal, lateralAmount)
+      .normalize()
+    const right = forward.clone().cross(frame.normal).normalize()
+    const zAxis = forward.clone().multiplyScalar(-1)
     const rotationMatrix = new THREE.Matrix4().makeBasis(
-      frame.binormal,
+      right,
       frame.normal,
       zAxis,
     )
@@ -90,7 +110,7 @@ export function Car({ track, onSpeedChange }: CarProps) {
 
     const desiredCamera = carPosition
       .clone()
-      .addScaledVector(frame.tangent, -13)
+      .addScaledVector(forward, -13)
       .addScaledVector(frame.normal, 6.5)
     cameraTarget.current.lerp(
       carPosition.clone().addScaledVector(frame.normal, 1.4),
