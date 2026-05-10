@@ -1,34 +1,27 @@
-import { useRef } from 'react'
+import { useRef, type RefObject } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { CAR_HEIGHT, CAR_WIDTH, ROAD_WIDTH } from '../game/constants'
-import { sampleTrackAtDistance, type TrackData } from '../game/track'
+import { CAR_HEIGHT, CAR_WIDTH } from '../game/constants'
+import {
+  getCarPose,
+  MAX_FORWARD_SPEED,
+  type CarState,
+  updateCarMotion,
+} from '../game/carMotion'
+import type { TrackData } from '../game/track'
 import { useKeyboard } from '../hooks/useKeyboard'
 
-type CarState = {
-  distance: number
-  headingOffset: number
-  lateralOffset: number
-  speed: number
-}
-
 type CarProps = {
+  playerStateRef?: RefObject<CarState>
   track: TrackData
   onSpeedChange: (speed: number) => void
 }
 
-const MOVE_SPEED_MULTIPLIER = 4
-const STEER_BASE_RATE = 0.55
-const STEER_SPEED_RATE = 0.014
-const MAX_HEADING_OFFSET = Math.PI / 5
-const ACCELERATION = 17
-const DRIVE_DRAG = 0.28
-const COAST_DRAG = 1.45
-const TRACK_SURFACE_OFFSET = 0.08
-const CAR_CENTER_HEIGHT = CAR_HEIGHT / 2 + TRACK_SURFACE_OFFSET
-const LATERAL_LIMIT = ROAD_WIDTH / 2 - CAR_WIDTH / 2 - 0.08
+const CAMERA_FOLLOW_DISTANCE = 13
+const CAMERA_FOLLOW_HEIGHT = 6.5
+const HIGH_SPEED_CAMERA_CLOSE_FACTOR = 0.5
 
-export function Car({ track, onSpeedChange }: CarProps) {
+export function Car({ playerStateRef, track, onSpeedChange }: CarProps) {
   const carRef = useRef<THREE.Group>(null)
   const keys = useKeyboard()
   const car = useRef<CarState>({
@@ -47,71 +40,45 @@ export function Car({ track, onSpeedChange }: CarProps) {
     const steerInput = Number(Boolean(pressed.a)) - Number(Boolean(pressed.d))
     const current = car.current
 
-    current.speed += forwardInput * ACCELERATION * step
-    current.speed *= 1 - (forwardInput === 0 ? COAST_DRAG : DRIVE_DRAG) * step
-    current.speed = THREE.MathUtils.clamp(current.speed, -13, 42)
+    updateCarMotion(
+      current,
+      {
+        forward: forwardInput,
+        steer: steerInput,
+      },
+      track,
+      step,
+      {
+        enableWallSlowdown: true,
+      },
+    )
 
-    if (Math.abs(current.speed) > 0.25) {
-      const reverse = current.speed < 0 ? -1 : 1
-      current.headingOffset -=
-        steerInput *
-        reverse *
-        (STEER_BASE_RATE + Math.abs(current.speed) * STEER_SPEED_RATE) *
-        step
+    const { position: carPosition, forward, frame, orientation: nextOrientation } =
+      getCarPose(track, current)
+    orientation.current.copy(nextOrientation)
+    if (playerStateRef) {
+      playerStateRef.current = { ...current }
     }
-
-    current.headingOffset = THREE.MathUtils.clamp(
-      current.headingOffset,
-      -MAX_HEADING_OFFSET,
-      MAX_HEADING_OFFSET,
-    )
-
-    const forwardAmount = Math.cos(current.headingOffset)
-    const lateralAmount = Math.sin(current.headingOffset)
-
-    current.distance +=
-      current.speed * forwardAmount * MOVE_SPEED_MULTIPLIER * step
-    current.lateralOffset +=
-      current.speed * lateralAmount * MOVE_SPEED_MULTIPLIER * step
-    current.lateralOffset = THREE.MathUtils.clamp(
-      current.lateralOffset,
-      -LATERAL_LIMIT,
-      LATERAL_LIMIT,
-    )
-
-    if (current.distance <= 0 || current.distance >= track.totalLength) {
-      current.distance = THREE.MathUtils.clamp(current.distance, 0, track.totalLength)
-      current.speed = 0
-    }
-
-    const frame = sampleTrackAtDistance(track.samples, current.distance)
-    const carPosition = frame.position
-      .clone()
-      .addScaledVector(frame.binormal, current.lateralOffset)
-      .addScaledVector(frame.normal, CAR_CENTER_HEIGHT)
-    const forward = frame.tangent
-      .clone()
-      .multiplyScalar(forwardAmount)
-      .addScaledVector(frame.binormal, lateralAmount)
-      .normalize()
-    const right = forward.clone().cross(frame.normal).normalize()
-    const zAxis = forward.clone().multiplyScalar(-1)
-    const rotationMatrix = new THREE.Matrix4().makeBasis(
-      right,
-      frame.normal,
-      zAxis,
-    )
-    orientation.current.setFromRotationMatrix(rotationMatrix)
 
     if (carRef.current) {
       carRef.current.position.copy(carPosition)
       carRef.current.quaternion.copy(orientation.current)
     }
 
+    const highSpeedRatio = THREE.MathUtils.clamp(
+      Math.abs(current.speed) / MAX_FORWARD_SPEED,
+      0,
+      1,
+    )
+    const cameraCloseFactor = THREE.MathUtils.lerp(
+      1,
+      HIGH_SPEED_CAMERA_CLOSE_FACTOR,
+      highSpeedRatio,
+    )
     const desiredCamera = carPosition
       .clone()
-      .addScaledVector(forward, -13)
-      .addScaledVector(frame.normal, 6.5)
+      .addScaledVector(forward, -CAMERA_FOLLOW_DISTANCE * cameraCloseFactor)
+      .addScaledVector(frame.normal, CAMERA_FOLLOW_HEIGHT * cameraCloseFactor)
     cameraTarget.current.lerp(
       carPosition.clone().addScaledVector(frame.normal, 1.4),
       1 - Math.exp(-7 * step),
