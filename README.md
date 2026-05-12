@@ -2,7 +2,7 @@
 
 这是一个使用 Bun、Vite、React 和 Three.js 构建的小型 Hot Wheels 风格赛车原型。
 
-游戏效果图：`target.png`
+游戏效果图：![target](./target.png)
 
 ## 当前进度
 
